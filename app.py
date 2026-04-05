@@ -746,10 +746,40 @@ def apply_styles() -> None:
             font-weight: 600;
         }
 
-        /* Expander text */
-        .streamlit-expanderContent p,
-        .streamlit-expanderContent span {
+        /* Selectbox text */
+        .stSelectbox div[data-baseweb="select"] {
+            background: rgba(255,255,255,0.92) !important;
+        }
+        .stSelectbox div[data-baseweb="select"] span {
             color: #1a2e3a !important;
+        }
+
+        /* Expander */
+        .streamlit-expanderHeader {
+            color: #1a5276 !important;
+            font-weight: 700;
+        }
+        .streamlit-expanderContent p,
+        .streamlit-expanderContent span,
+        .streamlit-expanderContent div {
+            color: #1a2e3a !important;
+        }
+
+        /* Section headings rendered via st.subheader / st.markdown */
+        .stMarkdown h3 {
+            color: #1a5276 !important;
+        }
+
+        /* Download button */
+        .stDownloadButton > button {
+            background: linear-gradient(90deg, #1e8449, #27ae60) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 50px !important;
+            padding: 0.55rem 2rem !important;
+            font-weight: 700 !important;
+            font-size: 1rem !important;
+            box-shadow: 0 4px 14px rgba(30,132,73,0.25) !important;
         }
         </style>
         """,
@@ -947,71 +977,11 @@ def page_welcome() -> None:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📝 Start New Survey", use_container_width=True):
-            st.session_state.page = "consent"
+            st.session_state.page = "user_info"
             st.rerun()
     with col2:
         if st.button("📂 Load Existing Results", use_container_width=True):
             st.session_state.page = "load"
-            st.rerun()
-
-
-def page_consent() -> None:
-    st.markdown('<div class="title-hero"><h1>📋 Informed Consent</h1></div>', unsafe_allow_html=True)
-
-    st.markdown(
-        f"""
-        <div class="card">
-            <p style="color:#1a2e3a;margin-bottom:1.2rem;">
-                Please read the following information carefully before proceeding.
-                Your participation implies agreement with all points below.
-            </p>
-
-            <div class="consent-block">
-                <h4>🔒 Privacy &amp; Confidentiality</h4>
-                <p>All information you provide is kept strictly confidential.
-                Your responses will not be shared with any third parties and will only be used
-                for the purpose of this psychological state assessment.</p>
-            </div>
-
-            <div class="consent-block">
-                <h4>⏱️ Time Commitment</h4>
-                <p>This survey consists of <strong>20 questions</strong> and takes approximately
-                <strong>{ESTIMATED_TIME:.1f} minutes</strong> to complete. You can navigate
-                back and forth between questions at any time.</p>
-            </div>
-
-            <div class="consent-block">
-                <h4>🤝 Voluntary Participation</h4>
-                <p>Your participation is entirely voluntary. You may exit the survey at any time
-                without consequence. Completing the survey implies your consent to participate.</p>
-            </div>
-
-            <div class="consent-block">
-                <h4>🎵 Music During the Survey</h4>
-                <p>You will have the option to play calming ambient music while answering the questions.
-                This feature is entirely optional and can be toggled on or off at any time during
-                the survey.</p>
-            </div>
-
-            <div class="consent-block">
-                <h4>📊 Results &amp; Recommendations</h4>
-                <p>Upon completion, you will receive a personalised psychological readiness score
-                along with curated music playlist recommendations tailored to your results.
-                You may download your results in JSON, CSV, or TXT format.</p>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ I Agree — Proceed", use_container_width=True):
-            st.session_state.page = "user_info"
-            st.rerun()
-    with col2:
-        if st.button("❌ Exit Survey", use_container_width=True):
-            st.session_state.page = "welcome"
             st.rerun()
 
 
@@ -1025,11 +995,30 @@ def page_user_info() -> None:
         value=st.session_state.get("user_name", ""),
         placeholder="e.g. Smith-Jones Mary Ann",
     )
-    dob = st.text_input(
-        "Date of Birth (DD/MM/YYYY)",
-        value=st.session_state.get("user_dob", ""),
-        placeholder="e.g. 15/03/2002",
+
+    # DOB: user types digits only, slashes inserted automatically
+    raw_dob = st.text_input(
+        "Date of Birth — type digits only, slashes added automatically (DDMMYYYY)",
+        value=st.session_state.get("user_dob_raw", ""),
+        placeholder="e.g. 15032002",
+        max_chars=10,
+        key="dob_raw_input",
     )
+    # Strip any non-digit characters the user may paste, then auto-format
+    digits_only = re.sub(r"\D", "", raw_dob)[:8]
+    formatted_dob = digits_only
+    if len(digits_only) >= 3:
+        formatted_dob = digits_only[:2] + "/" + digits_only[2:]
+    if len(digits_only) >= 5:
+        formatted_dob = digits_only[:2] + "/" + digits_only[2:4] + "/" + digits_only[4:]
+    st.session_state.user_dob_raw = raw_dob
+
+    if digits_only:
+        st.markdown(
+            f'<p style="color:#2471a3;font-size:0.9rem;margin-top:-0.5rem;">📅 Formatted: <strong>{formatted_dob}</strong></p>',
+            unsafe_allow_html=True,
+        )
+
     sid = st.text_input(
         "Student ID (digits only)",
         value=st.session_state.get("user_sid", ""),
@@ -1043,8 +1032,8 @@ def page_user_info() -> None:
 
         if not validate_name(name):
             error_set.add("Name may only contain letters, spaces, hyphens (-), and apostrophes ('). No digits or other symbols.")
-        if not validate_dob(dob):
-            error_set.add("Date of birth must be in DD/MM/YYYY format with realistic values.")
+        if not validate_dob(formatted_dob):
+            error_set.add("Date of birth must be 8 digits representing a real date (DDMMYYYY).")
         if not validate_student_id(sid):
             error_set.add("Student ID must contain only digits.")
 
@@ -1053,7 +1042,7 @@ def page_user_info() -> None:
                 st.error(err)
         else:
             st.session_state.user_name = name.strip()
-            st.session_state.user_dob = dob.strip()
+            st.session_state.user_dob = formatted_dob
             st.session_state.user_sid = sid.strip()
             st.session_state.page = "survey"
             st.session_state.current_q = 0
@@ -1064,7 +1053,7 @@ def page_user_info() -> None:
             st.rerun()
 
     if st.button("← Back"):
-        st.session_state.page = "consent"
+        st.session_state.page = "welcome"
         st.rerun()
 
 
@@ -1165,8 +1154,6 @@ def page_results() -> None:
         unsafe_allow_html=True,
     )
 
-    render_playlist_recommendations(score)
-
     with st.expander("📖 Full Scoring Scale"):
         for low, high, label, desc in SCORE_STATES:
             marker = "  ◀️ You are here" if low <= score <= high else ""
@@ -1174,7 +1161,8 @@ def page_results() -> None:
             st.caption(desc)
 
     st.markdown("---")
-    st.subheader("💾 Save Your Results")
+    st.markdown('<h3 style="color:#1a5276;">💾 Save Your Results</h3>', unsafe_allow_html=True)
+    st.markdown('<p style="color:#1a2e3a;">Choose a format and download your results to review later or share with your tutor.</p>', unsafe_allow_html=True)
 
     save_format = st.selectbox("Choose file format:", ["JSON", "CSV", "TXT"], key="save_format")
     results_data = build_results_dict(user_info, answers, score, state)
@@ -1247,7 +1235,7 @@ def page_load() -> None:
                 unsafe_allow_html=True,
             )
             if loaded_score >= 0:
-                render_playlist_recommendations(loaded_score)
+                pass  # no playlist recommendations
         else:
             st.warning("File could not be read or has an unexpected format.")
 
@@ -1280,8 +1268,6 @@ def main() -> None:
     page = st.session_state.page
     if page == "welcome":
         page_welcome()
-    elif page == "consent":
-        page_consent()
     elif page == "user_info":
         page_user_info()
     elif page == "survey":
