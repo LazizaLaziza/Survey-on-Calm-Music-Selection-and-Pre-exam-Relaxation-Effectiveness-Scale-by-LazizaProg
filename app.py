@@ -1,70 +1,72 @@
 import streamlit as st
-import json
+import datetime
+import re
 import csv
 import io
-import re
-import datetime
+import json
 
 # ─────────────────────────────────────────────
-# Variable types used (for marking criteria)
-# int, str, float, list, tuple, range, bool, dict, set, frozenset
+# CONSTANTS
 # ─────────────────────────────────────────────
 
+APP_TITLE: str = "Calm Music & Exam Readiness Survey"
+CONDUCTOR: str = "Psychological Readiness Assessment Tool"
 TOTAL_QUESTIONS: int = 20
 MAX_SCORE: int = 80
-APP_TITLE: str = "Pre-Exam Psychological State Survey"
-CONDUCTOR: str = "Conducted by Laziza"
-ESTIMATED_TIME: float = 8.5  # minutes (float type used)
-
-ALLOWED_CHARS: frozenset = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ -'"
-)
-
-SCORE_STATES: tuple = (
-    (0,  13, "🟢 Optimal Relaxation",
-     "Calm music is highly effective; you are in an excellent pre-exam psychological state. "
-     "No psychological help is required at this time."),
-    (14, 26, "🟡 Good Relaxation",
-     "Music reliably supports your pre-exam calm. Minor adjustments could further improve outcomes. "
-     "You are in a stable psychological state."),
-    (27, 40, "🟠 Moderate Relaxation",
-     "Music provides partial relief; residual exam anxiety remains and may affect performance. "
-     "Consider light stress-management techniques."),
-    (41, 53, "🔴 Limited Relaxation Response",
-     "Music has modest effects; pre-exam anxiety is noticeably present and managing it is advisable. "
-     "Speaking with a counsellor could be helpful."),
-    (54, 67, "🔴 Poor Relaxation Response",
-     "Music provides little relief; significant pre-exam stress is likely impacting your readiness. "
-     "Consider additional coping strategies and professional support."),
-    (68, 80, "🆘 Ineffective Relaxation",
-     "Music-based strategies are not working for you. Professional guidance or alternative stress "
-     "management techniques are strongly recommended. The person may require psychological help."),
-)
+ESTIMATED_TIME: float = 8.5
+ALLOWED_CHARS: set = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ '-")
 
 # ─────────────────────────────────────────────
-# MUSIC DATA
+# AMBIENT TRACKS (during survey)
 # ─────────────────────────────────────────────
+# YouTube IDs extracted from provided URLs:
+# 1st: https://youtu.be/wZVpusDUXbk  → wZVpusDUXbk
+# 2nd: https://youtu.be/H4v_TdxCYvs  → H4v_TdxCYvs
+# 3rd: https://youtu.be/SpQ8-xiDYWI  → SpQ8-xiDYWI
 
 SURVEY_AMBIENT_TRACKS: list = [
     {
-        "title": "Peaceful Piano",
-        "artist": "Peder B. Helland",
-        "youtube_id": "77ZozI0rw7w",
-        "emoji": "🎹",
-    },
-    {
-        "title": "Calm Study Lofi",
-        "artist": "Lofi Girl",
-        "youtube_id": "jfKfPfyJRdk",
-        "emoji": "☕",
-    },
-    {
-        "title": "Zen Garden Ambience",
-        "artist": "Nature Sounds",
-        "youtube_id": "lTRiuFIWV54",
+        "title": "Calm Study Ambience",
+        "artist": "Ambient Mix 1",
+        "youtube_id": "wZVpusDUXbk",
         "emoji": "🌿",
     },
+    {
+        "title": "Peaceful Focus",
+        "artist": "Ambient Mix 2",
+        "youtube_id": "H4v_TdxCYvs",
+        "emoji": "🌊",
+    },
+    {
+        "title": "Relaxing Background",
+        "artist": "Ambient Mix 3",
+        "youtube_id": "SpQ8-xiDYWI",
+        "emoji": "🎵",
+    },
 ]
+
+# ─────────────────────────────────────────────
+# SCORE STATES
+# ─────────────────────────────────────────────
+
+SCORE_STATES: tuple = (
+    (0, 13, "Optimal Psychological Readiness 🟢",
+     "You are exceptionally well-prepared psychologically. Calm music is deeply integrated into your routine and your mind is primed for peak exam performance."),
+    (14, 26, "Strong Psychological Readiness 🟡",
+     "You are well-balanced and generally resilient before exams. Minor stress is present but well-managed through your music habits."),
+    (27, 40, "Moderate Anxiety Present 🟠",
+     "Some anxiety is affecting your pre-exam state. Your use of calm music is helping but there is room for a more consistent approach."),
+    (41, 53, "Elevated Anxiety 🔴",
+     "Significant anxiety is present and your coping strategies need strengthening. A structured daily music relaxation habit is strongly recommended."),
+    (54, 67, "High Anxiety 🔴",
+     "Your anxiety levels are high. A dedicated routine of calming music alongside other relaxation techniques would meaningfully benefit your wellbeing and performance."),
+    (68, 80, "Severe Exam Anxiety 🆘",
+     "Music alone may not be sufficient at this stage. We strongly recommend combining sound therapy with guidance from a student support counsellor or mental health professional."),
+)
+
+# ─────────────────────────────────────────────
+# SCORE PLAYLISTS
+# ─────────────────────────────────────────────
 
 SCORE_PLAYLISTS: tuple = (
     (0, 13, {
@@ -90,7 +92,7 @@ SCORE_PLAYLISTS: tuple = (
         ],
     }),
     (14, 26, {
-        "mood": "Staying balanced 🌤️",
+        "mood": "Staying balanced 🌤",
         "message": "Your calm is solid. These playlists will help you maintain that balance right up to exam day.",
         "emoji": "🟡",
         "colour": "#b7950b",
@@ -178,7 +180,7 @@ SCORE_PLAYLISTS: tuple = (
         ],
     }),
     (68, 80, {
-        "mood": "Start fresh with sound therapy 🕊️",
+        "mood": "Start fresh with sound therapy 🕊",
         "message": "Music alone is not cutting through your stress right now. These guided sessions and sound therapy tracks are a gentle first step — alongside professional support.",
         "emoji": "🆘",
         "colour": "#1a5276",
@@ -200,6 +202,10 @@ SCORE_PLAYLISTS: tuple = (
         ],
     }),
 )
+
+# ─────────────────────────────────────────────
+# QUESTIONS
+# ─────────────────────────────────────────────
 
 QUESTIONS: list = [
     {
@@ -404,37 +410,29 @@ QUESTIONS: list = [
     },
 ]
 
-USED_IDS: set = set()
-
 # ─────────────────────────────────────────────
 # HELPER / VALIDATION FUNCTIONS
 # ─────────────────────────────────────────────
 
 def validate_name(name: str) -> bool:
-    """Return True only if name uses letters, spaces, hyphens, apostrophes."""
     if not name or not name.strip():
         return False
-    valid: bool = True
-    for ch in name:          # for loop for input validation
+    for ch in name:
         if ch not in ALLOWED_CHARS:
-            valid = False
-            break
-    return valid
+            return False
+    return True
 
 
 def validate_dob(dob_str: str) -> bool:
-    """Return True if date is valid DD/MM/YYYY and realistic."""
     pattern: str = r"^\d{2}/\d{2}/\d{4}$"
     if not re.match(pattern, dob_str):
         return False
     try:
         day, month, year = dob_str.split("/")
-        birth: datetime.date = datetime.date(int(year), int(month), int(day))
-        today: datetime.date = datetime.date.today()
-        age: int = today.year - birth.year
-        if birth > today:
-            return False
-        if age > 120:
+        birth = datetime.date(int(year), int(month), int(day))
+        today = datetime.date.today()
+        age = today.year - birth.year
+        if birth > today or age > 120:
             return False
         return True
     except ValueError:
@@ -442,42 +440,30 @@ def validate_dob(dob_str: str) -> bool:
 
 
 def validate_student_id(sid: str) -> bool:
-    """Return True if student ID contains only digits."""
     if not sid:
         return False
-    is_valid: bool = True
-    while is_valid:          # while loop for input validation
-        for ch in sid:
-            if not ch.isdigit():
-                is_valid = False
-                break
-        break
-    return is_valid
+    for ch in sid:
+        if not ch.isdigit():
+            return False
+    return True
 
 
 def get_psychological_state(score: int) -> dict:
-    """Return state label and description based on total score."""
-    result: dict = {}
     for low, high, label, description in SCORE_STATES:
         if low <= score <= high:
-            result = {"label": label, "description": description, "low": low, "high": high}
-            break
-    return result
+            return {"label": label, "description": description, "low": low, "high": high}
+    return {}
 
 
 def get_playlist_for_score(score: int) -> dict:
-    """Return the matching music playlist recommendation for a given score."""
-    playlist: dict = {}
     for low, high, data in SCORE_PLAYLISTS:
         if low <= score <= high:
-            playlist = data
-            break
-    return playlist
+            return data
+    return {}
 
 
 def compute_score(answers: dict) -> int:
-    """Sum up all answer scores."""
-    total: int = 0
+    total = 0
     for q_idx in range(TOTAL_QUESTIONS):
         if q_idx in answers:
             total += answers[q_idx]
@@ -485,12 +471,11 @@ def compute_score(answers: dict) -> int:
 
 
 def build_results_dict(user_info: dict, answers: dict, score: int, state: dict) -> dict:
-    """Assemble full results into a structured dict."""
-    answered_questions: list = []
+    answered_questions = []
     for i, q in enumerate(QUESTIONS):
         if i in answers:
-            chosen_score: int = answers[i]
-            chosen_text: str = ""
+            chosen_score = answers[i]
+            chosen_text = ""
             for opt_text, opt_score in q["options"]:
                 if opt_score == chosen_score:
                     chosen_text = opt_text
@@ -512,7 +497,7 @@ def build_results_dict(user_info: dict, answers: dict, score: int, state: dict) 
 
 
 def results_to_txt(data: dict) -> str:
-    lines: list = [
+    lines = [
         "=" * 60,
         f"  {APP_TITLE}",
         f"  {CONDUCTOR}",
@@ -556,13 +541,12 @@ def results_to_json(data: dict) -> str:
 
 
 def load_results_from_file(content: str, file_ext: str) -> dict:
-    """Parse uploaded results file and return dict."""
-    loaded: dict = {}
+    loaded = {}
     if file_ext == "json":
         loaded = json.loads(content)
     elif file_ext == "csv":
         reader = csv.reader(io.StringIO(content))
-        rows: list = list(reader)
+        rows = list(reader)
         for row in rows:
             if len(row) == 2:
                 key, val = row[0].strip(), row[1].strip()
@@ -595,164 +579,6 @@ def load_results_from_file(content: str, file_ext: str) -> dict:
                 loaded["description"] = line.split(":", 1)[-1].strip()
     return loaded
 
-
-# ─────────────────────────────────────────────
-# MUSIC WIDGET COMPONENTS
-# ─────────────────────────────────────────────
-
-def render_ambient_player() -> None:
-    """Render ambient music player shown during the survey."""
-    music_on: bool = st.session_state.get("music_on", False)
-    track_idx: int = st.session_state.get("track_idx", 0)
-    track: dict = SURVEY_AMBIENT_TRACKS[track_idx]
-
-    col_a, col_b, col_c = st.columns([1, 3, 1])
-    with col_a:
-        if st.button("⏮", key="prev_track", help="Previous track"):
-            st.session_state.track_idx = (track_idx - 1) % len(SURVEY_AMBIENT_TRACKS)
-            st.rerun()
-    with col_b:
-        toggle_label: str = "🔇 Pause Music" if music_on else "🎵 Play Ambient Music"
-        if st.button(toggle_label, key="music_toggle", use_container_width=True):
-            st.session_state.music_on = not music_on
-            st.rerun()
-    with col_c:
-        if st.button("⏭", key="next_track", help="Next track"):
-            st.session_state.track_idx = (track_idx + 1) % len(SURVEY_AMBIENT_TRACKS)
-            st.rerun()
-
-    if music_on:
-        yt_id: str = track["youtube_id"]
-        st.markdown(
-            f"""
-            <div style="
-                background: rgba(255,255,255,0.7);
-                border-radius: 14px;
-                padding: 0.8rem 1rem;
-                border: 1px solid #aed6f1;
-                margin: 0.5rem 0 0.8rem 0;
-                display: flex;
-                align-items: center;
-                gap: 0.8rem;
-            ">
-                <span style="font-size:1.5rem;">{track['emoji']}</span>
-                <div>
-                    <p style="margin:0;font-weight:700;color:#1a5276;font-size:0.9rem;">
-                        Now Playing: {track['title']}
-                    </p>
-                    <p style="margin:0;color:#2471a3;font-size:0.8rem;">{track['artist']}</p>
-                </div>
-                <span style="margin-left:auto;font-size:0.75rem;color:#5dade2;font-weight:700;
-                    animation: pulse 1.5s infinite;">
-                    ♪ LIVE
-                </span>
-            </div>
-            <iframe
-                width="100%" height="80"
-                src="https://www.youtube.com/embed/{yt_id}?autoplay=1&mute=0&controls=1&loop=1&playlist={yt_id}"
-                frameborder="0"
-                allow="autoplay; encrypted-media"
-                allowfullscreen
-                style="border-radius:10px; display:block;"
-            ></iframe>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f"""
-            <div style="
-                background: rgba(255,255,255,0.4);
-                border-radius: 14px;
-                padding: 0.5rem 1rem;
-                border: 1px dashed #aed6f1;
-                text-align: center;
-                color: #85c1e9;
-                font-size: 0.85rem;
-                margin: 0.3rem 0 0.5rem 0;
-            ">
-                {track['emoji']} <em>Press Play Ambient Music to listen while you answer</em>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-def render_playlist_recommendations(score: int) -> None:
-    """Render personalised playlist cards based on the user's score."""
-    playlist: dict = get_playlist_for_score(score)
-    if not playlist:
-        return
-
-    colour: str = playlist.get("colour", "#2471a3")
-
-    st.markdown(
-        f"""
-        <div style="
-            background: linear-gradient(135deg, {colour}18, {colour}06);
-            border: 1.5px solid {colour}55;
-            border-radius: 18px;
-            padding: 1.5rem 2rem 1rem;
-            margin: 1.5rem 0 0.5rem 0;
-        ">
-            <h3 style="color:{colour};margin-top:0;font-family:'Raleway',sans-serif;">
-                🎧 Your Personalised Music Prescription
-            </h3>
-            <p style="font-size:1.05rem;font-weight:700;color:#1a5276;margin-bottom:0.3rem;">
-                {playlist['emoji']} {playlist['mood']}
-            </p>
-            <p style="color:#1a5276;margin-bottom:0;">{playlist['message']}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    for track in playlist["tracks"]:
-        yt_id: str = track["youtube_id"]
-        st.markdown(
-            f"""
-            <div style="
-                background: rgba(255,255,255,0.88);
-                border-radius: 14px;
-                padding: 1rem 1.2rem 0.9rem;
-                margin: 0.8rem 0;
-                border: 1px solid #aed6f1;
-                box-shadow: 0 4px 14px rgba(41,128,185,0.09);
-            ">
-                <p style="margin:0 0 0.2rem 0;font-weight:700;color:#1a5276;font-size:1rem;">
-                    🎶 {track['title']}
-                </p>
-                <p style="margin:0 0 0.7rem 0;color:#5d8aa8;font-size:0.85rem;">
-                    {track['desc']}
-                </p>
-                <iframe
-                    width="100%" height="90"
-                    src="https://www.youtube.com/embed/{yt_id}?controls=1&rel=0&modestbranding=1"
-                    frameborder="0"
-                    allow="encrypted-media"
-                    allowfullscreen
-                    style="border-radius:8px;display:block;margin-bottom:0.7rem;"
-                ></iframe>
-                <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-                    <a href="{track['youtube']}" target="_blank" style="
-                        background:#ff0000;color:white;
-                        text-decoration:none;border-radius:50px;
-                        padding:0.3rem 1.1rem;font-size:0.8rem;font-weight:700;
-                        display:inline-block;
-                    ">▶ Open on YouTube</a>
-                    <a href="{track['spotify']}" target="_blank" style="
-                        background:#1db954;color:white;
-                        text-decoration:none;border-radius:50px;
-                        padding:0.3rem 1.1rem;font-size:0.8rem;font-weight:700;
-                        display:inline-block;
-                    ">🎵 Open on Spotify</a>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
 # ─────────────────────────────────────────────
 # PAGE STYLING
 # ─────────────────────────────────────────────
@@ -774,17 +600,31 @@ def apply_styles() -> None:
 
         h1, h2, h3 {
             font-family: 'Raleway', sans-serif;
-            color: #1a5276;
+            color: #1a5276 !important;
+        }
+
+        /* Force all paragraph and body text to dark colour */
+        p, li, span, div, label {
+            color: #1a2e3a;
+        }
+
+        .stMarkdown p, .stMarkdown li, .stMarkdown span {
+            color: #1a2e3a !important;
         }
 
         .card {
-            background: rgba(255,255,255,0.85);
+            background: rgba(255,255,255,0.92);
             backdrop-filter: blur(8px);
             border-radius: 18px;
             padding: 2rem 2.5rem;
             box-shadow: 0 8px 32px rgba(30,100,160,0.10);
             border: 1px solid rgba(160,210,240,0.4);
             margin-bottom: 1.5rem;
+            color: #1a2e3a;
+        }
+
+        .card p, .card li, .card h3, .card h4 {
+            color: #1a2e3a !important;
         }
 
         .title-hero {
@@ -794,24 +634,47 @@ def apply_styles() -> None:
 
         .title-hero h1 {
             font-size: 2.2rem;
-            color: #1a5276;
+            color: #1a5276 !important;
             margin-bottom: 0.3rem;
         }
 
         .title-hero p {
-            color: #2471a3;
+            color: #2471a3 !important;
             font-size: 1.05rem;
         }
 
         .conductor-badge {
             display: inline-block;
             background: linear-gradient(90deg, #2980b9, #5dade2);
-            color: white;
+            color: white !important;
             border-radius: 50px;
             padding: 0.3rem 1.2rem;
             font-size: 0.9rem;
             font-weight: 700;
             margin-top: 0.5rem;
+        }
+
+        /* Consent blocks */
+        .consent-block {
+            background: #f0f8ff;
+            border-left: 4px solid #2980b9;
+            border-radius: 0 12px 12px 0;
+            padding: 1rem 1.4rem;
+            margin-bottom: 1rem;
+        }
+
+        .consent-block h4 {
+            margin: 0 0 0.4rem 0;
+            color: #1a5276 !important;
+            font-size: 1rem;
+            font-family: 'Raleway', sans-serif;
+        }
+
+        .consent-block p {
+            margin: 0;
+            color: #1a2e3a !important;
+            font-size: 0.93rem;
+            line-height: 1.55;
         }
 
         .progress-label {
@@ -841,7 +704,7 @@ def apply_styles() -> None:
 
         .stRadio > label {
             font-weight: 600;
-            color: #1a5276;
+            color: #1a5276 !important;
         }
 
         .result-box {
@@ -849,12 +712,13 @@ def apply_styles() -> None:
             padding: 1.5rem 2rem;
             margin-top: 1rem;
             text-align: center;
+            background: rgba(255,255,255,0.92);
         }
 
         .score-chip {
             display: inline-block;
             background: #2980b9;
-            color: white;
+            color: white !important;
             border-radius: 50px;
             padding: 0.4rem 1.5rem;
             font-size: 1.5rem;
@@ -862,23 +726,186 @@ def apply_styles() -> None:
         }
 
         div[data-testid="stRadio"] div[role="radiogroup"] label {
-            background: rgba(240,248,255,0.7);
+            background: rgba(240,248,255,0.9);
             border: 1px solid #aed6f1;
             border-radius: 10px;
             padding: 0.4rem 0.8rem;
             margin: 0.2rem 0;
             display: block;
             transition: background 0.2s;
+            color: #1a2e3a !important;
         }
 
         div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
-            background: rgba(174,214,241,0.5);
+            background: rgba(174,214,241,0.6);
+        }
+
+        /* Input labels */
+        .stTextInput label, .stSelectbox label {
+            color: #1a5276 !important;
+            font-weight: 600;
+        }
+
+        /* Expander text */
+        .streamlit-expanderContent p,
+        .streamlit-expanderContent span {
+            color: #1a2e3a !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
+# ─────────────────────────────────────────────
+# MUSIC WIDGET COMPONENTS
+# ─────────────────────────────────────────────
+
+def render_ambient_player() -> None:
+    music_on: bool = st.session_state.get("music_on", False)
+    track_idx: int = st.session_state.get("track_idx", 0)
+    track: dict = SURVEY_AMBIENT_TRACKS[track_idx]
+
+    col_a, col_b, col_c = st.columns([1, 3, 1])
+    with col_a:
+        if st.button("⏮️", key="prev_track", help="Previous track"):
+            st.session_state.track_idx = (track_idx - 1) % len(SURVEY_AMBIENT_TRACKS)
+            st.rerun()
+    with col_b:
+        toggle_label = "🔇 Pause Music" if music_on else "🎵 Play Ambient Music"
+        if st.button(toggle_label, key="music_toggle", use_container_width=True):
+            st.session_state.music_on = not music_on
+            st.rerun()
+    with col_c:
+        if st.button("⏭️", key="next_track", help="Next track"):
+            st.session_state.track_idx = (track_idx + 1) % len(SURVEY_AMBIENT_TRACKS)
+            st.rerun()
+
+    if music_on:
+        yt_id = track["youtube_id"]
+        st.markdown(
+            f"""
+            <div style="
+                background: rgba(255,255,255,0.85);
+                border-radius: 14px;
+                padding: 0.8rem 1rem;
+                border: 1px solid #aed6f1;
+                margin: 0.5rem 0 0.8rem 0;
+                display: flex;
+                align-items: center;
+                gap: 0.8rem;
+            ">
+                <span style="font-size:1.5rem;">{track['emoji']}</span>
+                <div>
+                    <p style="margin:0;font-weight:700;color:#1a5276;font-size:0.9rem;">
+                        Now Playing: {track['title']}
+                    </p>
+                    <p style="margin:0;color:#2471a3;font-size:0.8rem;">{track['artist']}</p>
+                </div>
+                <span style="margin-left:auto;font-size:0.75rem;color:#5dade2;font-weight:700;">
+                    ♪ LIVE
+                </span>
+            </div>
+            <iframe
+                width="100%" height="80"
+                src="https://www.youtube.com/embed/{yt_id}?autoplay=1&mute=0&controls=1&loop=1&playlist={yt_id}"
+                frameborder="0"
+                allow="autoplay; encrypted-media"
+                allowfullscreen
+                style="border-radius:10px; display:block;"
+            ></iframe>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+            <div style="
+                background: rgba(255,255,255,0.5);
+                border-radius: 14px;
+                padding: 0.5rem 1rem;
+                border: 1px dashed #aed6f1;
+                text-align: center;
+                color: #2471a3;
+                font-size: 0.85rem;
+                margin: 0.3rem 0 0.5rem 0;
+            ">
+                {track['emoji']} <em>Press Play Ambient Music to listen while you answer</em>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def render_playlist_recommendations(score: int) -> None:
+    playlist = get_playlist_for_score(score)
+    if not playlist:
+        return
+    colour = playlist.get("colour", "#2471a3")
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, {colour}18, {colour}06);
+            border: 1.5px solid {colour}55;
+            border-radius: 18px;
+            padding: 1.5rem 2rem 1rem;
+            margin: 1.5rem 0 0.5rem 0;
+        ">
+            <h3 style="color:{colour};margin-top:0;font-family:'Raleway',sans-serif;">
+                🎧 Your Personalised Music Prescription
+            </h3>
+            <p style="font-size:1.05rem;font-weight:700;color:#1a5276;margin-bottom:0.3rem;">
+                {playlist['emoji']} {playlist['mood']}
+            </p>
+            <p style="color:#1a2e3a;margin-bottom:0;">{playlist['message']}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    for track in playlist["tracks"]:
+        yt_id = track["youtube_id"]
+        st.markdown(
+            f"""
+            <div style="
+                background: rgba(255,255,255,0.92);
+                border-radius: 14px;
+                padding: 1rem 1.2rem 0.9rem;
+                margin: 0.8rem 0;
+                border: 1px solid #aed6f1;
+                box-shadow: 0 4px 14px rgba(41,128,185,0.09);
+            ">
+                <p style="margin:0 0 0.2rem 0;font-weight:700;color:#1a5276;font-size:1rem;">
+                    🎶 {track['title']}
+                </p>
+                <p style="margin:0 0 0.7rem 0;color:#2471a3;font-size:0.85rem;">
+                    {track['desc']}
+                </p>
+                <iframe
+                    width="100%" height="90"
+                    src="https://www.youtube.com/embed/{yt_id}?controls=1&rel=0&modestbranding=1"
+                    frameborder="0"
+                    allow="encrypted-media"
+                    allowfullscreen
+                    style="border-radius:8px;display:block;margin-bottom:0.7rem;"
+                ></iframe>
+                <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                    <a href="{track['youtube']}" target="_blank" style="
+                        background:#ff0000;color:white;
+                        text-decoration:none;border-radius:50px;
+                        padding:0.3rem 1.1rem;font-size:0.8rem;font-weight:700;
+                        display:inline-block;
+                    ">▶️ Open on YouTube</a>
+                    <a href="{track['spotify']}" target="_blank" style="
+                        background:#1db954;color:white;
+                        text-decoration:none;border-radius:50px;
+                        padding:0.3rem 1.1rem;font-size:0.8rem;font-weight:700;
+                        display:inline-block;
+                    ">🎵 Open on Spotify</a>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ─────────────────────────────────────────────
 # SLIDES / PAGES
@@ -900,12 +927,12 @@ def page_welcome() -> None:
         """
         <div class="card">
             <h3>About This Survey</h3>
-            <p>This questionnaire evaluates your psychological readiness before exams by exploring how
+            <p style="color:#1a2e3a;">This questionnaire evaluates your psychological readiness before exams by exploring how
             calm music affects your stress, anxiety, sleep, confidence, and physical symptoms.
             Based on your responses, it will determine your current psychological state and
             provide a personalised assessment — <strong>plus a curated music playlist</strong>
             matched exactly to your results.</p>
-            <ul>
+            <ul style="color:#1a2e3a;line-height:2;">
                 <li>📋 <strong>20 questions</strong> — each with 5 answer options</li>
                 <li>⏱️ Estimated completion time: <strong>~8–10 minutes</strong></li>
                 <li>🎵 Optional ambient music to play <strong>while you answer</strong></li>
@@ -934,22 +961,44 @@ def page_consent() -> None:
     st.markdown(
         f"""
         <div class="card">
-            <h3>🔒 Privacy & Confidentiality</h3>
-            <p>All information you provide is kept strictly confidential.
-            Your responses will not be shared with any third parties and will only be used
-            for the purpose of this psychological state assessment.</p>
+            <p style="color:#1a2e3a;margin-bottom:1.2rem;">
+                Please read the following information carefully before proceeding.
+                Your participation implies agreement with all points below.
+            </p>
 
-            <h3>⏱️ Time Commitment</h3>
-            <p>This survey consists of <strong>20 questions</strong> and takes approximately
-            <strong>{ESTIMATED_TIME:.1f} minutes</strong> to complete.</p>
+            <div class="consent-block">
+                <h4>🔒 Privacy &amp; Confidentiality</h4>
+                <p>All information you provide is kept strictly confidential.
+                Your responses will not be shared with any third parties and will only be used
+                for the purpose of this psychological state assessment.</p>
+            </div>
 
-            <h3>🤝 Voluntary Participation</h3>
-            <p>Your participation is entirely voluntary. You may exit the survey at any time
-            without consequence. Completing the survey implies your consent to participate.</p>
+            <div class="consent-block">
+                <h4>⏱️ Time Commitment</h4>
+                <p>This survey consists of <strong>20 questions</strong> and takes approximately
+                <strong>{ESTIMATED_TIME:.1f} minutes</strong> to complete. You can navigate
+                back and forth between questions at any time.</p>
+            </div>
 
-            <h3>🎵 Music During the Survey</h3>
-            <p>You will have the option to play calming ambient music while answering the questions.
-            This feature is entirely optional and can be toggled on or off at any time.</p>
+            <div class="consent-block">
+                <h4>🤝 Voluntary Participation</h4>
+                <p>Your participation is entirely voluntary. You may exit the survey at any time
+                without consequence. Completing the survey implies your consent to participate.</p>
+            </div>
+
+            <div class="consent-block">
+                <h4>🎵 Music During the Survey</h4>
+                <p>You will have the option to play calming ambient music while answering the questions.
+                This feature is entirely optional and can be toggled on or off at any time during
+                the survey.</p>
+            </div>
+
+            <div class="consent-block">
+                <h4>📊 Results &amp; Recommendations</h4>
+                <p>Upon completion, you will receive a personalised psychological readiness score
+                along with curated music playlist recommendations tailored to your results.
+                You may download your results in JSON, CSV, or TXT format.</p>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -990,7 +1039,7 @@ def page_user_info() -> None:
     st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("Continue to Survey →", use_container_width=True):
-        error_set: set = set()
+        error_set = set()
 
         if not validate_name(name):
             error_set.add("Name may only contain letters, spaces, hyphens (-), and apostrophes ('). No digits or other symbols.")
@@ -1020,37 +1069,37 @@ def page_user_info() -> None:
 
 
 def page_survey() -> None:
-    q_idx: int = st.session_state.get("current_q", 0)
-    answers: dict = st.session_state.get("answers", {})
+    q_idx = st.session_state.get("current_q", 0)
+    answers = st.session_state.get("answers", {})
 
-    # Progress bar
-    progress: float = q_idx / TOTAL_QUESTIONS
+    progress = q_idx / TOTAL_QUESTIONS
     st.markdown(
         f'<p class="progress-label">Question {q_idx + 1} of {TOTAL_QUESTIONS}</p>',
         unsafe_allow_html=True,
     )
     st.progress(progress)
 
-    # Ambient music player
     st.markdown("---")
     render_ambient_player()
     st.markdown("---")
 
-    question: dict = QUESTIONS[q_idx]
-    options: list = question["options"]
-    option_labels: list = [opt[0] for opt in options]
-    option_scores: list = [opt[1] for opt in options]
+    question = QUESTIONS[q_idx]
+    options = question["options"]
+    option_labels = [opt[0] for opt in options]
+    option_scores = [opt[1] for opt in options]
 
-    default_idx: int = 0
+    default_idx = 0
     if q_idx in answers:
-        saved_score: int = answers[q_idx]
+        saved_score = answers[q_idx]
         for i, sc in enumerate(option_scores):
             if sc == saved_score:
                 default_idx = i
                 break
 
-    st.markdown(f'<div class="card"><h3>{question["text"]}</h3>', unsafe_allow_html=True)
-
+    st.markdown(
+        f'<div class="card"><h3 style="color:#1a5276;">{question["text"]}</h3>',
+        unsafe_allow_html=True,
+    )
     chosen_label = st.radio(
         "Select your answer:",
         option_labels,
@@ -1060,7 +1109,7 @@ def page_survey() -> None:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    chosen_score_val: int = option_scores[option_labels.index(chosen_label)]
+    chosen_score_val = option_scores[option_labels.index(chosen_label)]
     answers[q_idx] = chosen_score_val
     st.session_state.answers = answers
 
@@ -1083,65 +1132,57 @@ def page_survey() -> None:
 
 
 def page_results() -> None:
-    answers: dict = st.session_state.get("answers", {})
-    user_info: dict = {
+    answers = st.session_state.get("answers", {})
+    user_info = {
         "name": st.session_state.get("user_name", ""),
         "dob": st.session_state.get("user_dob", ""),
         "sid": st.session_state.get("user_sid", ""),
     }
-
-    score: int = compute_score(answers)
-    state: dict = get_psychological_state(score)
+    score = compute_score(answers)
+    state = get_psychological_state(score)
 
     st.markdown('<div class="title-hero"><h1>📊 Your Results</h1></div>', unsafe_allow_html=True)
 
     st.markdown(
         f"""
         <div class="card">
-            <p><strong>Name:</strong> {user_info['name']}</p>
-            <p><strong>Date of Birth:</strong> {user_info['dob']}</p>
-            <p><strong>Student ID:</strong> {user_info['sid']}</p>
+            <p style="color:#1a2e3a;"><strong>Name:</strong> {user_info['name']}</p>
+            <p style="color:#1a2e3a;"><strong>Date of Birth:</strong> {user_info['dob']}</p>
+            <p style="color:#1a2e3a;"><strong>Student ID:</strong> {user_info['sid']}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
     st.markdown(
         f"""
         <div class="card result-box">
             <p style="font-size:1rem;color:#2471a3;font-weight:600;">Total Score</p>
             <span class="score-chip">{score} / {MAX_SCORE}</span>
-            <h2 style="margin-top:1rem;">{state.get('label','')}</h2>
-            <p style="color:#1a5276;">{state.get('description','')}</p>
+            <h2 style="margin-top:1rem;color:#1a5276;">{state.get('label','')}</h2>
+            <p style="color:#1a2e3a;">{state.get('description','')}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Personalised music recommendations
     render_playlist_recommendations(score)
 
     with st.expander("📖 Full Scoring Scale"):
         for low, high, label, desc in SCORE_STATES:
-            marker: str = "  ◀ You are here" if low <= score <= high else ""
-            st.markdown(f"**{low}–{high}  {label}**{marker}")
+            marker = "  ◀️ You are here" if low <= score <= high else ""
+            st.markdown(f"**{low}–{high}** &nbsp; {label}{marker}")
             st.caption(desc)
 
     st.markdown("---")
     st.subheader("💾 Save Your Results")
 
-    save_format: str = st.selectbox(
-        "Choose file format:",
-        ["JSON", "CSV", "TXT"],
-        key="save_format",
-    )
-
-    results_data: dict = build_results_dict(user_info, answers, score, state)
+    save_format = st.selectbox("Choose file format:", ["JSON", "CSV", "TXT"], key="save_format")
+    results_data = build_results_dict(user_info, answers, score, state)
 
     if save_format == "JSON":
-        file_content: str = results_to_json(results_data)
-        mime: str = "application/json"
-        filename: str = f"survey_results_{user_info['sid']}.json"
+        file_content = results_to_json(results_data)
+        mime = "application/json"
+        filename = f"survey_results_{user_info['sid']}.json"
     elif save_format == "CSV":
         file_content = results_to_csv(results_data)
         mime = "text/csv"
@@ -1169,9 +1210,8 @@ def page_results() -> None:
 
 def page_load() -> None:
     st.markdown('<div class="title-hero"><h1>📂 Load Existing Results</h1></div>', unsafe_allow_html=True)
-
     st.markdown(
-        '<div class="card"><p>Upload a previously saved results file (JSON, CSV, or TXT) to view your results and music recommendations.</p></div>',
+        '<div class="card"><p style="color:#1a2e3a;">Upload a previously saved results file (JSON, CSV, or TXT) to view your results and music recommendations.</p></div>',
         unsafe_allow_html=True,
     )
 
@@ -1182,33 +1222,30 @@ def page_load() -> None:
     )
 
     if uploaded is not None:
-        ext: str = uploaded.name.rsplit(".", 1)[-1].lower()
-        content: str = uploaded.read().decode("utf-8")
-
+        ext = uploaded.name.rsplit(".", 1)[-1].lower()
+        content = uploaded.read().decode("utf-8")
         try:
-            loaded: dict = load_results_from_file(content, ext)
+            loaded = load_results_from_file(content, ext)
         except Exception as e:
             st.error(f"Could not parse file: {e}")
             loaded = {}
 
         if loaded:
             st.success("File loaded successfully!")
-            loaded_score: int = loaded.get("total_score", -1)
-
+            loaded_score = loaded.get("total_score", -1)
             st.markdown(
                 f"""
                 <div class="card">
-                    <p><strong>Name:</strong> {loaded.get('surname_name','—')}</p>
-                    <p><strong>Date of Birth:</strong> {loaded.get('date_of_birth','—')}</p>
-                    <p><strong>Student ID:</strong> {loaded.get('student_id','—')}</p>
-                    <p><strong>Total Score:</strong> {loaded.get('total_score','—')} / {MAX_SCORE}</p>
-                    <p><strong>Psychological State:</strong> {loaded.get('psychological_state','—')}</p>
-                    <p><strong>Assessment:</strong> {loaded.get('description','—')}</p>
+                    <p style="color:#1a2e3a;"><strong>Name:</strong> {loaded.get('surname_name','—')}</p>
+                    <p style="color:#1a2e3a;"><strong>Date of Birth:</strong> {loaded.get('date_of_birth','—')}</p>
+                    <p style="color:#1a2e3a;"><strong>Student ID:</strong> {loaded.get('student_id','—')}</p>
+                    <p style="color:#1a2e3a;"><strong>Total Score:</strong> {loaded.get('total_score','—')} / {MAX_SCORE}</p>
+                    <p style="color:#1a2e3a;"><strong>Psychological State:</strong> {loaded.get('psychological_state','—')}</p>
+                    <p style="color:#1a2e3a;"><strong>Assessment:</strong> {loaded.get('description','—')}</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-
             if loaded_score >= 0:
                 render_playlist_recommendations(loaded_score)
         else:
@@ -1217,7 +1254,6 @@ def page_load() -> None:
     if st.button("← Back to Home"):
         st.session_state.page = "welcome"
         st.rerun()
-
 
 # ─────────────────────────────────────────────
 # MAIN ENTRY POINT
@@ -1230,7 +1266,6 @@ def main() -> None:
         layout="centered",
         initial_sidebar_state="collapsed",
     )
-
     apply_styles()
 
     if "page" not in st.session_state:
@@ -1242,8 +1277,7 @@ def main() -> None:
     if "track_idx" not in st.session_state:
         st.session_state.track_idx = 0
 
-    page: str = st.session_state.page
-
+    page = st.session_state.page
     if page == "welcome":
         page_welcome()
     elif page == "consent":
